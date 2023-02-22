@@ -4,7 +4,7 @@
 extern crate rocket;
 use rocket_contrib::json::Json;
 use serde::Serialize;
-use rusqlite::{Connection, Statement};
+use rusqlite::Connection;
 
 
 #[derive(Serialize)]
@@ -46,7 +46,7 @@ fn fetch_all_todo_items() -> Result<Json<ToDoList>, String>{
         
 
     let results = statement.query_map([], |row|  {
-        Ok(ToDoItem{
+        Ok(ToDoItem {
             id: row.get(0)?,
             item: row.get(1)?,
         })
@@ -54,7 +54,7 @@ fn fetch_all_todo_items() -> Result<Json<ToDoList>, String>{
 
     match results {
         Ok(rows) => {
-            let collection: rusqlite::Result<Vec<_>> = rows.collect();
+            let collection: rusqlite::Result<Vec<ToDoItem>> = rows.collect();
 
             match collection {
                 Ok(items) => Ok(Json (ToDoList { items })),
