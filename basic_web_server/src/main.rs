@@ -4,15 +4,16 @@
 extern crate rocket;
 use rocket_contrib::json::Json;
 use serde::Serialize;
-use rusqlite::Connection;
+use rusqlite::{Connection, Result};
+use std::error::Error;
 
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 struct ToDoList{
     items: Vec<ToDoItem>,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 struct ToDoItem{
     id: i64,
     item: String,
@@ -30,42 +31,34 @@ fn index() -> &'static str{
 }
 
 #[get("/todo")]
-fn fetch_all_todo_items() -> Result<Json<ToDoList>, String>{
-    let db_connection = match Connection::open("data.sqlite"){
-        Ok(connection) => connection,
-        Err(_) => {
-            return Err(String::from("Failed to connect to database"));
-        }
-    };
+fn fetch_all_todo_items() -> Result<Json<ToDoList>, Box<dyn Error>> {
+    let conn = Connection::open("data.sqlite").map_err(|_| format!("Failed to connect to database"))?;
 
-    let mut statement = match  db_connection
-        .prepare("select id, item from todo_list;"){
-            Ok(statement) => statement,
-            Err(_) => return Err("Failed to prepare query".into()),
-    };
-        
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS todo_list (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            item VARCHAR(64) NOT NULL
+        )",
+        [],
+    )
+    .map_err(|err| format!("Failed to create table: {}", err))?;
 
-    let results = statement.query_map([], |row|  {
+    let mut statement = conn.prepare("SELECT id, item FROM todo_list").map_err(|err| format!("Failed to prepare query: {}", err.description()))?;
+
+    let rows = statement.query_map([], |row| {
         Ok(ToDoItem {
             id: row.get(0)?,
             item: row.get(1)?,
         })
-    });
+    }).map_err(|err| format!("Failed to fetch todo items: {}", err.description()))?;
 
-    match results {
-        Ok(rows) => {
-            let collection: rusqlite::Result<Vec<ToDoItem>> = rows.collect();
+    let items: Vec<_> = rows.collect::<Result<Vec<_>, _>>().map_err(|err| format!("Could not collect items: {}", err.description()))?;
 
-            match collection {
-                Ok(items) => Ok(Json (ToDoList { items })),
-                Err(_) => Err("Could not collect items".into()),
-            }
-        }
-        Err(_) => Err("Failed to fetch todo itrms".into()),
-    }
-
-
+    Ok(Json(ToDoList { items }))
 }
+
+
+
 
 #[post("/todo", format = "json", data = "<item>")]
 fn add_todo_items(item: Json<String>) -> Result<Json<StatusMessage>, String>{
@@ -118,19 +111,19 @@ fn remove_todo_items(id: i64) -> Result<Json<StatusMessage>, String>{
 }
 
 fn main() {
-    {
-    let db_connection = Connection::open("data.sqlite").unwrap();
+   // {
+    //let db_connection = Connection::open("data.sqlite").unwrap();
 
-    db_connection
-    .execute(
-        "create table if not exists todo_list (
-                id interger primary key,
-                item varchar(64) not null
-        );",
-            [],
-    )
-     .unwrap();
-    }
+    //db_connection
+    //.execute(
+      //  "create table if not exists todo_list (
+        //        id interger primary key,
+          //      item varchar(64) not null
+        //);",
+          //  [],
+    //)
+     //.unwrap();
+    //}
 
 
     rocket::ignite().mount("/", routes![index, fetch_all_todo_items, add_todo_items, remove_todo_items]).launch();
